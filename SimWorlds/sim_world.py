@@ -1,49 +1,59 @@
 import copy
 from typing import Tuple
 
+from .state import State
+import numpy as np
+
 
 class SimWorld:
     def __init__(self):
-        self.actions = ["1", "2", "-1", "-2"]
+        self.actions = ["-2", "-1", "0", "1", "2"]
 
         return
 
-    def get_legal_actions(self, state: list[float]) -> list[int]:
+    def get_legal_actions(self, state: State) -> list[int]:
         """
         action is identified by index in total amount of actions available
         """
+
+        if state.player == 1:
+            return [1, 2, 3, 4]
+
         return [0, 1, 2, 3]
 
     def get_total_amount_of_actions(self) -> int:
-        return 4
+        return 5
 
-    def get_initial_state(self) -> list[float]:
-        return [0.0, 0.0]
+    def get_initial_state(self) -> State:
+        return State(np.array([0.0]), 1)
 
-    def get_new_state(self, SAP: Tuple[list[float], int]) -> list[float]:
+    def get_n_observations(self) -> int:
+        return 1
+
+    def get_new_state(self, SAP: Tuple[State, int]) -> Tuple[State, bool, int]:
         state = copy.deepcopy(SAP[0])
         value = int(self.actions[SAP[1]])
-        index = abs(value) - 1
-        state[index] += value
+        state.state[0] += value
+        state.player = ((state.player) % 2) + 1
 
-        return state
+        return (state, self.is_end_state(state), self.get_reward(state))
 
-    def is_end_state(self, state: list[float]) -> bool:
+    def is_end_state(self, state: State) -> bool:
         """
         determines whether the given state is an endState or not
         """
-        if state[0] >= 5 or state[1] >= 5:
+        if state.state[0] >= 5 or state.state[0] <= -5:
             return True
 
         return False
 
-    def get_reward(self, state: list[float]) -> int:
+    def get_reward(self, state: State) -> int:
         """
         calculates the reward based on the given state
         """
-        if state[0] >= 5:
+        if state.state[0] >= 5:
             return 1
-        elif state[1] >= 5:
+        elif state.state[0] <= -5:
             return -1
 
         return 0

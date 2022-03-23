@@ -1,2 +1,4 @@
 Cython==0.29.28
+graphviz==0.19.1
+numpy==1.22.2
 setuptools==59.3.0

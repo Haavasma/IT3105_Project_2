@@ -1,6 +1,8 @@
 import random
-
-from SimWorlds import SimWorld
+from typing import List, Tuple
+from SimWorlds import SimWorld, State
+import numpy as np
+import tensorflow as tf
 
 
 class ActorPolicy:
@@ -10,10 +12,20 @@ class ActorPolicy:
 
         return
 
-    def get_action(self, state: list[float], player) -> int:
+    def get_action(self, state: State) -> int:
         actions = self.sim_world.get_legal_actions(state)
 
         return actions[random.Random().randint(0, len(actions) - 1)]
 
-    def save_model(self):
+    def fit(self, inputs: tf.Tensor, targets: tf.Tensor):
+        return
+
+    def save_current_model(self, directory: str, name: str):
+        return
+
+    def load_model(self, directory: str, name: str):
+        """
+        loads the model saved in the given path to and sets as current model for the
+        actor
+        """
         return
