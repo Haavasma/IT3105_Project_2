@@ -1,4 +1,8 @@
 Cython==0.29.28
 graphviz==0.19.1
-numpy==1.22.2
-setuptools==59.3.0
+numpy==1.22.3
+requests==2.27.1
+scikit_learn==1.0.2
+setuptools==59.4.0
+tensorflow==2.8.0rc0
+tqdm==4.63.0

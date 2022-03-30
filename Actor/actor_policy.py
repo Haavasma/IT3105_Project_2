@@ -29,3 +29,7 @@ class ActorPolicy:
         actor
         """
         return
+
+    def translate_state(self, state: State) -> np.ndarray:
+
+        return np.array([])

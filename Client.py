@@ -5,39 +5,101 @@ from ActorClient import ActorClient
 import numpy as np
 
 
-game = HexGame(5)
+game = HexGame(7)
 
-actor = ANNActorPolicy(game, [1, 1], "relu", 100, 0.1)  # parameters are ignored
+actor = ANNActorPolicy(game, [1, 1], [1, 1], "relu", 100, 0.1)  # parameters are ignored
+
+
+current_player = 1
+
+wins = 0
+losses = 0
+
+
+class Statistics:
+    def __init__(self):
+        self.losses = 0
+        self.wins = 0
+        self.current_player = 1
+
+    def add_win(self):
+        self.wins += 1
+
+    def add_loss(self):
+        self.losses += 1
 
 
 class Client(ActorClient):
+    # def __init__(
+    #     self,
+    #     host=...,
+    #     port=...,
+    #     cert=...,
+    #     auth=...,
+    #     echo=...,
+    #     qualify=...,
+    #     api_port=...,
+    #     league_port=...,
+    #     log_fmt=None,
+    # ):
+    #     self.stats = Statistics()
+    #     super().__init__(
+    #         host=host,
+    #         port=port,
+    #         cert=cert,
+    #         auth=auth,
+    #         echo=echo,
+    #         qualify=qualify,
+    #         api_port=api_port,
+    #         league_port=league_port,
+    #         log_fmt=log_fmt,
+    #     )
+
     def handle_series_start(
         self, unique_id, series_id, player_map, num_games, game_params
     ):
-        game.set_board_size(7)
+        self.stats = Statistics()
+        self.stats.current_player = series_id
         return super().handle_series_start(
             unique_id, series_id, player_map, num_games, game_params
         )
 
     def handle_get_action(self, state):
-        print(state)
         structured_state = State(np.array(state[1:]), state[0])
+        # game.visualize_state(structured_state)
         return game.from_action_to_row_col(
             actor.get_action(structured_state, exploit=True)
         )
+
+    def handle_game_over(self, winner, end_state):
+        structured_state = State(np.array(end_state[1:]), end_state[0])
+        game.visualize_state(structured_state)
+        if self.stats.current_player == winner:
+            self.stats.add_win()
+            print("my agent wins!")
+        else:
+            self.stats.add_loss()
+            print("my agent lost!")
+
+        return super().handle_game_over(winner, end_state)
+
+    def handle_series_over(self, stats):
+        print(f"series over, stats: {stats}")
+
+        return super().handle_series_over(stats)
 
 
 if __name__ == "__main__":
     model_file_name = sys.argv[1]
 
-    sim_world = SimWorld()
+    sim_world = game
 
     actor = ANNActorPolicy(
-        sim_world, [1, 1], "relu", 100, 0.1
+        sim_world, [1, 1], [1, 1], "relu", 100, 0.1
     )  # parameters are ignored
 
     actor.load_model(model_file_name)
 
-    client = Client(auth="02779e3ccbaf4d39927ac8216ff4021e")
+    client = Client()
 
     client.run()

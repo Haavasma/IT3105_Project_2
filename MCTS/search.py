@@ -9,6 +9,7 @@ import graphviz
 from graphviz.graphs import Digraph
 
 import sys
+import time
 
 from Actor import ActorPolicy
 
@@ -35,6 +36,7 @@ class MCTS:
         self.n_searches = n_searches
         self.exploration_bonus_constant = exploration_bonus_constant
         self.reset_tree(initial_state)
+        self.terminal_state: DefaultDict[str, int] = defaultdict(lambda: -1)
 
         return
 
@@ -73,10 +75,10 @@ class MCTS:
         """
 
         # Perform given amount of searches through the tree
+
         for _ in range(self.n_searches):
             self.state = self.root_node.state
-            path = self.select_leaf_node()
-            result = self.rollout()
+            (path, result) = self.select_leaf_node_and_evaluate()
             self.backpropagate(path, result)
 
         total_amount_of_actions = self.sim_world.get_total_amount_of_actions()
@@ -90,6 +92,7 @@ class MCTS:
 
         # normalize values in visit distribution
         dist_normalized = distribution / distribution.sum()
+        # print(dist_normalized)
 
         return (self.root_node.state, dist_normalized)
 
@@ -138,51 +141,73 @@ class MCTS:
         """
         perform a rollout (simulation) from the current state and return the result from the rollout
         """
+        # TODO FIGURE OUT HOW TO DEAL WITH ENDING STATES IN MC TREE
+        # print(f"ROLLING OUT FROM: {self.state.state}")
+        # self.sim_world.visualize_state(self.state)
+        # print("STARING ROLLOUT \n")
         is_end_state = False
         reward = 0
         while not is_end_state:
+            start_time = time.time()
             action = self.actor_policy.get_action(self.state)
+            # print(f"time used getting action: {time.time() - start_time}")
+            start_time = time.time()
             (self.state, is_end_state, reward) = self.sim_world.get_new_state(
                 (self.state, action)
             )
+            # print(f"time used getting next state: {time.time() - start_time}")
+
+            # print("-----")
+            # self.sim_world.visualize_state(self.state)
+            # print("-----")
 
         return reward
 
-    def select_leaf_node(self) -> list[Tuple[State, int]]:
+    def select_leaf_node_and_evaluate(self) -> Tuple[list[Tuple[State, int]], float]:
         """
         find a leaf node and explore in the monte carlo tree
         """
         current_node = self.root_node
 
         path: list[Tuple[State, int]] = []
+        start_time = time.time()
         while True:
             self.node_visits[self.generate_id_from_state(self.state)] += 1
+            self.state = current_node.state
             best_action = self.get_action_from_tree_policy(current_node)
-            path.append((current_node.state, best_action))
 
             self.edge_visits[
                 (self.generate_id_from_sap((self.state, best_action)))
             ] += 1
 
+            path.append((current_node.state, best_action))
+
+            (new_state, is_winning_state, result) = self.sim_world.get_new_state(
+                (self.state, best_action)
+            )
+
+            self.state = new_state
+
+            if is_winning_state and best_action in current_node.edges.keys():
+                return (path, result)
+
             if best_action not in current_node.edges.keys():
-                (new_state, _, _) = self.sim_world.get_new_state(
-                    (self.state, best_action)
-                )
                 current_node.edges[best_action] = Node(new_state)
-                current_node = current_node.edges[best_action]
-                self.state = current_node.state
-                break
+
+                if is_winning_state:
+                    return (path, result)
+                else:
+                    result = (path, self.rollout())
+                    return result
+
             else:
                 current_node = current_node.edges[best_action]
-                self.state = current_node.state
-
-        return path
 
     def get_action_from_tree_policy(self, node: Node) -> int:
         if node.state.player == 1:
             # maximizing player
             best_action = 0
-            best_value = sys.float_info.min
+            best_value = -sys.float_info.max
             for action in self.sim_world.get_legal_actions(node.state):
                 sap_id = self.generate_id_from_sap((node.state, action))
                 value = self.q_values[sap_id] + self.calculate_exploration_bonus(
@@ -191,6 +216,7 @@ class MCTS:
                 if value > best_value:
                     best_value = value
                     best_action = action
+
             return best_action
         else:
             # minimizing player

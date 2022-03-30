@@ -11,10 +11,13 @@ class HexGame(SimWorld):
         return
 
     def get_initial_state(self) -> State:
-        return State(np.zeros_like((self.board_size, self.board_size)), 1)
+        return State(np.zeros((self.board_size**2)), 1)
 
-    def get_legal_actions(self, state: State) -> list[int]:
+    def get_legal_actions(self, state: State) -> List[int]:
         return list(np.where(state.state == 0)[0])
+
+    def get_total_amount_of_actions(self) -> int:
+        return self.board_size**2
 
     def set_board_size(self, K):
         """
@@ -24,16 +27,22 @@ class HexGame(SimWorld):
         self.action_index_to_neighbors: List[List[int]] = []
         for action in range(K**2):
             self.action_index_to_neighbors.append(self.get_neighbors(action))
+
         return
 
-    def get_new_state(self, SAP: Tuple[State, int]) -> Tuple[State, bool, int]:
+    def get_new_state(
+        self, SAP: Tuple[State, int], verbose=False
+    ) -> Tuple[State, bool, int]:
         state = copy.deepcopy(SAP[0])
         action = SAP[1]
+
+        if state.state[action] != 0:
+            raise Exception("Cannot put piece where there is already one placed!")
 
         is_winning_move = self.is_winning_move(SAP)
 
         state.state[action] = state.player
-        state.player = ((state.player + 1) % 2) + 1
+        state.player = ((state.player) % 2) + 1
 
         reward = 0
 
@@ -46,7 +55,6 @@ class HexGame(SimWorld):
         """
         checks if the current move results in a win for the given player
         """
-
         # find walls hit connecting from placed piece
         walls = self.search(SAP[0], SAP[1])
 
@@ -57,18 +65,53 @@ class HexGame(SimWorld):
         # otherwise, not a winning move
         return False
 
+    def visualize_state(self, state: State):
+        """
+        visualize the board in a diamond shape
+        """
+        string_builder = ""
+
+        counter = 0
+
+        while counter < 2 * self.board_size - 1:
+            for _ in range(abs(self.board_size - counter - 1)):
+                string_builder += " "
+
+            lst = []
+
+            for i in range(self.board_size):
+                for j in range(self.board_size):
+                    if i + j == counter:
+                        lst.append(
+                            int(state.state[self.from_row_col_to_action((j, i))])
+                        )
+
+            for i in lst:
+                string_builder += str(i) + " "
+
+            string_builder += "\n"
+            counter += 1
+
+        print(string_builder)
+
+        return
+
     def search(self, state: State, node: int):
         # check if spot is the players wall
-        wall = self.is_action_wall(node, state.player)
+        queue = [node]
+        visited = set(())
+        walls = set(())
 
-        # if wall, return list with wall value
-        if wall != -1:
-            return [wall]
-
-        walls = []
-        for neighbour in self.action_index_to_neighbors[node]:
-            if state.state[neighbour] == state.player:
-                walls.extend(self.search(state, neighbour))
+        while len(queue) > 0:
+            node = queue.pop()
+            visited.add(node)
+            walls.add(self.is_action_wall(node, state.player))
+            for neighbour in self.action_index_to_neighbors[node]:
+                if (
+                    int(state.state[neighbour]) == state.player
+                    and neighbour not in visited
+                ):
+                    queue.append(neighbour)
 
         return walls
 
@@ -94,20 +137,23 @@ class HexGame(SimWorld):
         return -1
 
     def get_neighbors(self, action: int) -> List[int]:
+        """
+        find neighbors for position of given action
+        """
         (row, col) = self.from_action_to_row_col(action)
         neighbors: List[int] = []
 
         if row + 1 < self.board_size:
             neighbors.append(self.from_row_col_to_action((row + 1, col)))
-            if col + 1 < self.board_size:
-                neighbors.append(self.from_row_col_to_action((row + 1, col + 1)))
+            if col - 1 >= 0:
+                neighbors.append(self.from_row_col_to_action((row + 1, col - 1)))
         if col + 1 < self.board_size:
             neighbors.append(self.from_row_col_to_action((row, col + 1)))
 
         if row - 1 >= 0:
             neighbors.append(self.from_row_col_to_action((row - 1, col)))
-            if col - 1 >= 0:
-                neighbors.append(self.from_row_col_to_action((row - 1, col - 1)))
+            if col + 1 < self.board_size:
+                neighbors.append(self.from_row_col_to_action((row - 1, col + 1)))
         if col - 1 >= 0:
             neighbors.append(self.from_row_col_to_action((row, col - 1)))
 
@@ -115,7 +161,7 @@ class HexGame(SimWorld):
 
     def from_row_col_to_action(self, row_col: Tuple[int, int]) -> int:
         (row, col) = (row_col[0], row_col[1])
-        return ()
+        return row * self.board_size + col
 
     def from_action_to_row_col(self, action: int) -> Tuple[int, int]:
         """

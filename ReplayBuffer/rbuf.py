@@ -1,7 +1,9 @@
+import copy
 import random
 from typing import List, Tuple
 import numpy as np
 import tensorflow as tf
+from Actor.actor_policy import ActorPolicy
 
 from SimWorlds import State
 
@@ -21,18 +23,18 @@ class ReplayBuffer:
         if len(self.cases) >= self.max_size:
             self.cases.pop(0)
 
-        self.cases.append(training_case)
+        self.cases.append(copy.deepcopy(training_case))
         return
 
-    def get_mini_batch(self) -> Tuple[tf.Tensor, tf.Tensor]:
+    def get_mini_batch(self, actor: ActorPolicy) -> Tuple[tf.Tensor, tf.Tensor]:
         """
         get an input and target tensor / minibatch of given size from the replayBuffer
         """
         cases = random.sample(self.cases, min(self.minibatch_size, len(self.cases)))
 
         inputs = tf.convert_to_tensor(
-            [np.append(case[0].player, case[0].state) for case in cases]
+            np.array([actor.translate_state(case[0]) for case in cases])
         )
-        targets = tf.convert_to_tensor([case[1] for case in cases])
+        targets = tf.convert_to_tensor(np.array([case[1] for case in cases]))
 
         return (inputs, targets)
