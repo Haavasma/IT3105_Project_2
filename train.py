@@ -21,7 +21,7 @@ def main():
 
     actor = ANNActorPolicy(
         sim_world,
-        [],
+        [32, 64, 32],
         [50, 100, 50],
         "relu",
         100,
@@ -30,7 +30,7 @@ def main():
 
     # print(sim_world.get_initial_state())
 
-    mcts = MCTS(actor, sim_world, sim_world.get_initial_state(), 250)
+    mcts = MCTS(actor, sim_world, sim_world.get_initial_state(), 500)
 
     replay_buffer = ReplayBuffer(10000, 200)
 
