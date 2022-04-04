@@ -33,6 +33,7 @@ class HexGame(SimWorld):
     def get_new_state(
         self, SAP: Tuple[State, int], verbose=False
     ) -> Tuple[State, bool, int]:
+        player = SAP[0].player
         state = copy.deepcopy(SAP[0])
         action = SAP[1]
 
@@ -40,14 +41,13 @@ class HexGame(SimWorld):
             raise Exception("Cannot put piece where there is already one placed!")
 
         is_winning_move = self.is_winning_move(SAP)
-
-        state.state[action] = state.player
-        state.player = ((state.player) % 2) + 1
-
         reward = 0
 
         if is_winning_move:
-            reward = 1 if state.player == 1 else -1
+            reward = 1 if player == 1 else -1
+
+        state.state[action] = state.player
+        state.player = ((state.player) % 2) + 1
 
         return (state, is_winning_move, reward)
 

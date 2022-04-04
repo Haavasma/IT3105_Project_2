@@ -8,3 +8,6 @@ class State:
         self.player = player
 
         return
+
+    def generate_state_id(self):
+        return "-".join([str(i) for i in self.state]) + "_" + str(self.player)

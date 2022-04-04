@@ -98,8 +98,10 @@ if __name__ == "__main__":
         sim_world, [1, 1], [1, 1], "relu", 100, 0.1
     )  # parameters are ignored
 
-    actor.load_model(model_file_name)
+    file_name_split = model_file_name.split("/")
 
-    client = Client()
+    actor.load_model("/".join(file_name_split[:-1]), file_name_split[-1])
+
+    client = Client(auth="02779e3ccbaf4d39927ac8216ff4021e")
 
     client.run()

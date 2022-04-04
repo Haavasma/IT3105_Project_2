@@ -1,6 +1,7 @@
 from collections import defaultdict
+import copy
 from random import random
-from typing import DefaultDict, Tuple
+from typing import DefaultDict, List, Tuple
 
 from SimWorlds import SimWorld, State
 import numpy as np
@@ -17,9 +18,23 @@ from Actor import ActorPolicy
 class Node:
     def __init__(self, state: State):
         self.state = state
+        self.edge_visits = defaultdict(lambda: 0)
+        self.visits = 1
         self.edges: dict[int, Node] = {}
-        self.evaluations: DefaultDict[int, float] = defaultdict(lambda: 0)
+        self.evaluations = defaultdict(lambda: 0.0)
+        self.q = defaultdict(lambda: 0.0)
         return
+
+    def update_q(self, reward: float, action: int):
+        self.edge_visits[action] += 1
+        self.evaluations[action] += reward
+        self.q[action] = self.evaluations[action] / self.edge_visits[action]
+
+    def set_evaluation(self, evaluation: float):
+        self.evaluation = evaluation
+
+    def set_visits(self, visits):
+        self.visits = visits
 
 
 class MCTS:
@@ -29,14 +44,13 @@ class MCTS:
         sim_world: SimWorld,
         initial_state: State,
         n_searches: int,
-        exploration_bonus_constant=1.0,
+        exploration_bonus_constant=0.5,
     ):
         self.actor_policy = actor_policy
         self.sim_world = sim_world
         self.n_searches = n_searches
         self.exploration_bonus_constant = exploration_bonus_constant
         self.reset_tree(initial_state)
-        self.terminal_state: DefaultDict[str, int] = defaultdict(lambda: -1)
 
         return
 
@@ -46,22 +60,23 @@ class MCTS:
         """
         self.state = initial_state
         self.root_node = Node(initial_state)
-        self.node_visits: DefaultDict[str, int] = defaultdict(lambda: 1)
-        self.edge_visits: DefaultDict[str, int] = defaultdict(lambda: 1)
-        self.q_values: DefaultDict[str, float] = defaultdict(lambda: 0)
         return
 
     def perform_action(self, action: int):
         """
         updates the montecarlo tree to have the next state after given action as root
         """
-        if action in self.root_node.edges.keys():
+        if action in self.root_node.edges:
             self.root_node = self.root_node.edges[action]
         else:
             (new_state, _, _) = self.sim_world.get_new_state(
                 (self.root_node.state, action)
             )
             self.root_node = Node(new_state)
+
+        # self.node_visits: DefaultDict[str, int] = defaultdict(lambda: 1)
+        # self.edge_visits: DefaultDict[str, int] = defaultdict(lambda: 1)
+        # self.q_values: DefaultDict[str, float] = defaultdict(lambda: 0)
 
     def set_state(self, state: State):
         self.state = state
@@ -78,19 +93,32 @@ class MCTS:
 
         for _ in range(self.n_searches):
             self.state = self.root_node.state
+            # print(f"root node distribution: {self.root_node.edge_visits}")
             (path, result) = self.select_leaf_node_and_evaluate()
+
+            # print(f"PATH: {path}, result: {result}")
             self.backpropagate(path, result)
 
         total_amount_of_actions = self.sim_world.get_total_amount_of_actions()
 
         distribution = np.zeros((total_amount_of_actions))
 
-        for action in self.root_node.edges.keys():
-            distribution[action] = self.edge_visits[
-                self.generate_id_from_sap((self.root_node.state, action))
-            ]
+        for action in self.root_node.edges:
+            distribution[action] = self.root_node.edge_visits[action]
 
-        # normalize values in visit distribution
+        # print(f"edge visit distribution")
+        # print(distribution)
+        # print(f"NODE VISITS: {self.root_node.visits}")
+
+        # print("q + u values:")
+
+        # print(
+        #     [
+        #         f"action: {action} q:{self.root_node.q[action]} u: {self.calculate_exploration_bonus(self.root_node, action)}"
+        #         for action in self.root_node.edges
+        #     ]
+        # )
+
         dist_normalized = distribution / distribution.sum()
         # print(dist_normalized)
 
@@ -122,18 +150,17 @@ class MCTS:
             g.edge(
                 parent_name,
                 new_parent_name,
-                label=f"{action}: Et: {node.evaluations[action]}, Q: {self.q_values[self.generate_id_from_sap((node.state, action))]}",
+                label=f"{action}: Et: {node.evaluation}, Q: {node.q}",
             )
             self.add_edges(g, new_node, new_parent_name)
 
         return
 
-    def backpropagate(self, path: list[Tuple[State, int]], result: float):
+    def backpropagate(self, path: list[int], result: float):
         current_node = self.root_node
-        for SAP in path:
-            current_node.evaluations[SAP[1]] += result
-            self.update_Q_value(current_node.evaluations[SAP[1]], SAP)
-            current_node = current_node.edges[SAP[1]]
+        for action in path:
+            current_node.update_q(result, action)
+            current_node = current_node.edges[action]
 
         return
 
@@ -141,67 +168,52 @@ class MCTS:
         """
         perform a rollout (simulation) from the current state and return the result from the rollout
         """
-        # TODO FIGURE OUT HOW TO DEAL WITH ENDING STATES IN MC TREE
-        # print(f"ROLLING OUT FROM: {self.state.state}")
-        # self.sim_world.visualize_state(self.state)
-        # print("STARING ROLLOUT \n")
         is_end_state = False
         reward = 0
         while not is_end_state:
-            start_time = time.time()
             action = self.actor_policy.get_action(self.state)
-            # print(f"time used getting action: {time.time() - start_time}")
-            start_time = time.time()
             (self.state, is_end_state, reward) = self.sim_world.get_new_state(
                 (self.state, action)
             )
-            # print(f"time used getting next state: {time.time() - start_time}")
-
-            # print("-----")
-            # self.sim_world.visualize_state(self.state)
-            # print("-----")
 
         return reward
 
-    def select_leaf_node_and_evaluate(self) -> Tuple[list[Tuple[State, int]], float]:
+    def select_leaf_node_and_evaluate(self) -> Tuple[list[int], float]:
         """
         find a leaf node and explore in the monte carlo tree
         """
         current_node = self.root_node
 
-        path: list[Tuple[State, int]] = []
-        start_time = time.time()
+        path: List[int] = []
         while True:
-            self.node_visits[self.generate_id_from_state(self.state)] += 1
             self.state = current_node.state
+            current_node.set_visits(current_node.visits + 1)
+
+            if len(current_node.edges.keys()) <= 0:
+                for action in self.sim_world.get_legal_actions(self.state):
+                    (
+                        new_state,
+                        _,
+                        _,
+                    ) = self.sim_world.get_new_state((self.state, action))
+
+                    current_node.edges[action] = Node(copy.deepcopy(new_state))
+
+                return (path, self.rollout())
+
             best_action = self.get_action_from_tree_policy(current_node)
-
-            self.edge_visits[
-                (self.generate_id_from_sap((self.state, best_action)))
-            ] += 1
-
-            path.append((current_node.state, best_action))
 
             (new_state, is_winning_state, result) = self.sim_world.get_new_state(
                 (self.state, best_action)
             )
 
-            self.state = new_state
+            path.append(best_action)
 
-            if is_winning_state and best_action in current_node.edges.keys():
+            if is_winning_state:
                 return (path, result)
 
-            if best_action not in current_node.edges.keys():
-                current_node.edges[best_action] = Node(new_state)
-
-                if is_winning_state:
-                    return (path, result)
-                else:
-                    result = (path, self.rollout())
-                    return result
-
-            else:
-                current_node = current_node.edges[best_action]
+            self.state = new_state
+            current_node = current_node.edges[best_action]
 
     def get_action_from_tree_policy(self, node: Node) -> int:
         if node.state.player == 1:
@@ -209,10 +221,7 @@ class MCTS:
             best_action = 0
             best_value = -sys.float_info.max
             for action in self.sim_world.get_legal_actions(node.state):
-                sap_id = self.generate_id_from_sap((node.state, action))
-                value = self.q_values[sap_id] + self.calculate_exploration_bonus(
-                    (node.state, action)
-                )
+                value = node.q[action] + self.calculate_exploration_bonus(node, action)
                 if value > best_value:
                     best_value = value
                     best_action = action
@@ -223,24 +232,17 @@ class MCTS:
             best_action = 0
             best_value = sys.float_info.max
             for action in self.sim_world.get_legal_actions(node.state):
-                sap_id = self.generate_id_from_sap((node.state, action))
-                value = self.q_values[sap_id] - self.calculate_exploration_bonus(
-                    (node.state, action)
-                )
+                value = node.q[action] - self.calculate_exploration_bonus(node, action)
 
                 if value < best_value:
                     best_value = value
                     best_action = action
+
             return best_action
 
-    def update_Q_value(self, current_evaluation: float, SAP: Tuple[State, int]):
-        sap_id = self.generate_id_from_sap(SAP)
-        self.q_values[sap_id] = current_evaluation / self.edge_visits[sap_id]
-
-    def calculate_exploration_bonus(self, SAP: Tuple[State, int]) -> float:
+    def calculate_exploration_bonus(self, node: Node, action: int) -> float:
         return self.exploration_bonus_constant * np.sqrt(
-            (np.log(self.node_visits[self.generate_id_from_state(SAP[0])]))
-            / (1 + self.edge_visits[self.generate_id_from_sap(SAP)])
+            (np.log(node.visits)) / (1 + node.edge_visits[action])
         )
 
     def generate_id_from_state(self, state: State) -> str:
