@@ -1,6 +1,6 @@
 from collections import defaultdict
 import copy
-from random import random
+import random
 from typing import DefaultDict, List, Tuple
 
 from SimWorlds import SimWorld, State
@@ -25,7 +25,8 @@ class Node:
         self.q = defaultdict(lambda: 0.0)
         return
 
-    def update_q(self, reward: float, action: int):
+    def update_values(self, reward: float, action: int):
+        self.visits += 1
         self.edge_visits[action] += 1
         self.evaluations[action] += reward
         self.q[action] = self.evaluations[action] / self.edge_visits[action]
@@ -44,15 +45,36 @@ class MCTS:
         sim_world: SimWorld,
         initial_state: State,
         n_searches: int,
-        exploration_bonus_constant=0.5,
+        exploration_bonus_constant=1.0,
+        rollout_probability=1.0,
+        rollout_prob_decay=0.90,
+        exploit=False,
+        seed=69,
     ):
         self.actor_policy = actor_policy
         self.sim_world = sim_world
         self.n_searches = n_searches
         self.exploration_bonus_constant = exploration_bonus_constant
+        self.rollout_probability = rollout_probability
+        self.current_rollout_probability = rollout_probability
+        self.rollout_probability_decay = rollout_prob_decay
+        self.exploit = exploit
+        self.random = random.Random(seed)
         self.reset_tree(initial_state)
 
         return
+
+    def reset_rollout_prob(self):
+        """
+        set the current roullout probability to the initial value
+        """
+        self.current_rollout_probability = self.rollout_probability
+
+    def decay_rollout_prob(self):
+        """
+        Decays the probability of rollout once
+        """
+        self.current_rollout_probability *= self.rollout_probability_decay
 
     def reset_tree(self, initial_state: State):
         """
@@ -62,17 +84,17 @@ class MCTS:
         self.root_node = Node(initial_state)
         return
 
+    def reset_random(self, seed: int):
+        """
+        set the random seed
+        """
+        self.random = random.Random(seed)
+
     def perform_action(self, action: int):
         """
         updates the montecarlo tree to have the next state after given action as root
         """
-        if action in self.root_node.edges:
-            self.root_node = self.root_node.edges[action]
-        else:
-            (new_state, _, _) = self.sim_world.get_new_state(
-                (self.root_node.state, action)
-            )
-            self.root_node = Node(new_state)
+        self.root_node = self.root_node.edges[action]
 
         # self.node_visits: DefaultDict[str, int] = defaultdict(lambda: 1)
         # self.edge_visits: DefaultDict[str, int] = defaultdict(lambda: 1)
@@ -90,116 +112,76 @@ class MCTS:
         """
 
         # Perform given amount of searches through the tree
-
         for _ in range(self.n_searches):
             self.state = self.root_node.state
-            # print(f"root node distribution: {self.root_node.edge_visits}")
-            (path, result) = self.select_leaf_node_and_evaluate()
 
-            # print(f"PATH: {path}, result: {result}")
+            (path, node, is_winning_state, result) = self.select_leaf_node()
+            if not is_winning_state:
+                self.expand_node(node)
+
+                if self.random.random() <= self.current_rollout_probability:
+                    result = self.rollout(node)
+                else:
+                    result = self.actor_policy.get_value(node.state)
+
             self.backpropagate(path, result)
 
+        # get the total amount of actions from the environment
         total_amount_of_actions = self.sim_world.get_total_amount_of_actions()
 
+        # set up edge visit distribution
         distribution = np.zeros((total_amount_of_actions))
 
         for action in self.root_node.edges:
             distribution[action] = self.root_node.edge_visits[action]
 
-        # print(f"edge visit distribution")
-        # print(distribution)
-        # print(f"NODE VISITS: {self.root_node.visits}")
-
-        # print("q + u values:")
-
-        # print(
-        #     [
-        #         f"action: {action} q:{self.root_node.q[action]} u: {self.calculate_exploration_bonus(self.root_node, action)}"
-        #         for action in self.root_node.edges
-        #     ]
-        # )
-
+        # normalize distribution to sum to 1
         dist_normalized = distribution / distribution.sum()
-        # print(dist_normalized)
 
-        return (self.root_node.state, dist_normalized)
+        result = np.zeros(dist_normalized.shape)
 
-    def visualize_graph(self, file_name="search_tree"):
-        """
-        visualize the graph using directed graph with graphviz
-        """
-        g = graphviz.Digraph(
-            file_name, filename=f"./images/{file_name}.gv", engine="sfdp"
-        )
+        # keep only the "correct" move as training data
+        move = np.argmax(dist_normalized)
+        result[move] = 1
 
-        self.add_edges(g, self.root_node)
-
-        g.view()
-
-        return
-
-    def add_edges(self, g: Digraph, node: Node, parent_name=""):
-        """
-        add edges and id/label nodes so that view is coherent with actual decision tree
-        """
-
-        g.node(label=self.generate_id_from_state(node.state), name=parent_name)
-        for action in node.edges.keys():
-            new_node = node.edges[action]
-            new_parent_name = f"{random()}"
-            g.edge(
-                parent_name,
-                new_parent_name,
-                label=f"{action}: Et: {node.evaluation}, Q: {node.q}",
-            )
-            self.add_edges(g, new_node, new_parent_name)
-
-        return
+        return (self.root_node.state, result)
 
     def backpropagate(self, path: list[int], result: float):
         current_node = self.root_node
         for action in path:
-            current_node.update_q(result, action)
+            current_node.update_values(result, action)
             current_node = current_node.edges[action]
 
         return
 
-    def rollout(self) -> int:
+    def rollout(self, node: Node) -> int:
         """
         perform a rollout (simulation) from the current state and return the result from the rollout
         """
         is_end_state = False
         reward = 0
+        self.state = node.state
         while not is_end_state:
-            action = self.actor_policy.get_action(self.state)
+            action = self.actor_policy.get_action(self.state, exploit=self.exploit)
             (self.state, is_end_state, reward) = self.sim_world.get_new_state(
                 (self.state, action)
             )
 
         return reward
 
-    def select_leaf_node_and_evaluate(self) -> Tuple[list[int], float]:
+    def select_leaf_node(self) -> Tuple[list[int], Node, bool, int]:
         """
-        find a leaf node and explore in the monte carlo tree
+        find a leaf node, return it, the path that lead to it, whether it is a winning state and the reward for it
         """
         current_node = self.root_node
 
         path: List[int] = []
         while True:
             self.state = current_node.state
-            current_node.set_visits(current_node.visits + 1)
 
             if len(current_node.edges.keys()) <= 0:
-                for action in self.sim_world.get_legal_actions(self.state):
-                    (
-                        new_state,
-                        _,
-                        _,
-                    ) = self.sim_world.get_new_state((self.state, action))
-
-                    current_node.edges[action] = Node(copy.deepcopy(new_state))
-
-                return (path, self.rollout())
+                # Found leaf node
+                return (path, current_node, False, 0)
 
             best_action = self.get_action_from_tree_policy(current_node)
 
@@ -208,14 +190,35 @@ class MCTS:
             )
 
             path.append(best_action)
-
-            if is_winning_state:
-                return (path, result)
-
             self.state = new_state
             current_node = current_node.edges[best_action]
 
+            if is_winning_state:
+                return (path, current_node, True, result)
+
+    def expand_node(self, node: Node) -> Node:
+        """
+        expand a node
+        """
+        actions = self.sim_world.get_legal_actions(node.state)
+        new_states = []
+        # add nodes for all legal actions to the given node
+        for action in actions:
+            (
+                new_state,
+                _,
+                _,
+            ) = self.sim_world.get_new_state((node.state, action))
+
+            new_states.append(new_state)
+            node.edges[action] = Node(copy.deepcopy(new_state))
+
+        return node
+
     def get_action_from_tree_policy(self, node: Node) -> int:
+        """
+        select an action from the given node
+        """
         if node.state.player == 1:
             # maximizing player
             best_action = 0
@@ -241,21 +244,45 @@ class MCTS:
             return best_action
 
     def calculate_exploration_bonus(self, node: Node, action: int) -> float:
-        return self.exploration_bonus_constant * np.sqrt(
-            (np.log(node.visits)) / (1 + node.edge_visits[action])
-        )
-
-    def generate_id_from_state(self, state: State) -> str:
-        return "-".join([str(i) for i in state.state]) + "_" + str(state.player)
-
-    def generate_id_from_sap(self, SAP: Tuple[State, int]) -> str:
-        return (
-            "-".join([str(i) for i in SAP[0].state])
-            + "_"
-            + str(SAP[0].player)
-            + "_"
-            + str(SAP[1])
+        """
+        UCT implementation of exploration bias
+        """
+        return self.exploration_bonus_constant * (
+            np.sqrt(np.log(node.visits) / (1 + node.edge_visits[action]))
         )
 
     def get_current_state(self) -> State:
         return self.state
+
+
+def select_action(state: State, time_limit: float, actor: ActorPolicy, exploit=False):
+    """
+    no state, select an action using the given ANET policy
+    and time limit
+    """
+    mcts = MCTS(actor, actor.sim_world, state, 1000, exploit=exploit)
+    start_time = time.time()
+
+    while True:
+        mcts.state = mcts.root_node.state
+
+        (path, node, is_winning_state, result) = mcts.select_leaf_node()
+        if not is_winning_state:
+            mcts.expand_node(node)
+            result = mcts.rollout(node)
+
+        mcts.backpropagate(path, result)
+
+        if time.time() - start_time >= time_limit:
+            break
+
+    total_amount_of_actions = actor.sim_world.get_total_amount_of_actions()
+
+    distribution = np.zeros((total_amount_of_actions))
+
+    for action in mcts.root_node.edges:
+        distribution[action] = mcts.root_node.edge_visits[action]
+
+    dist_normalized = distribution / distribution.sum()
+
+    return int(np.argmax(dist_normalized))

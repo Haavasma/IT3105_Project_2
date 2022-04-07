@@ -17,28 +17,51 @@ class LiteModel:
         self.interpreter = interpreter
         self.interpreter.allocate_tensors()
         input_det = self.interpreter.get_input_details()[0]
-        output_det = self.interpreter.get_output_details()[0]
+        output_det = self.interpreter.get_output_details()
         self.input_index = input_det["index"]
-        self.output_index = output_det["index"]
+        self.policy_index = output_det[0]["index"]
+        self.value_index = output_det[1]["index"]
         self.input_shape = input_det["shape"]
-        self.output_shape = output_det["shape"]
+        self.policy_shape = output_det[0]["shape"]
+        self.value_shape = output_det[1]["shape"]
         self.input_dtype = input_det["dtype"]
-        self.output_dtype = output_det["dtype"]
+        self.policy_dtype = output_det[0]["dtype"]
+        self.value_dtype = output_det[1]["dtype"]
 
-    def predict(self, inp):
+    def predict_policy(self, inp):
         inp = inp.astype(self.input_dtype)
         count = inp.shape[0]
-        out = np.zeros((count, self.output_shape[1]), dtype=self.output_dtype)
+        out = np.zeros((count, self.policy_shape[1]), dtype=self.policy_dtype)
         for i in range(count):
             self.interpreter.set_tensor(self.input_index, inp[i : i + 1])
             self.interpreter.invoke()
-            out[i] = self.interpreter.get_tensor(self.output_index)[0]
+            out[i] = self.interpreter.get_tensor(self.policy_index)[0]
         return out
 
-    def predict_single(self, inp):
+    def predict_value(self, inp):
+        inp = inp.astype(self.input_dtype)
+        count = inp.shape[0]
+        out = np.zeros((count, self.value_shape[1]), dtype=self.value_dtype)
+        for i in range(count):
+            self.interpreter.set_tensor(self.input_index, inp[i : i + 1])
+            self.interpreter.invoke()
+            out[i] = self.interpreter.get_tensor(self.value_index)[0]
+        return out
+
+    def predict_single_policy(self, inp):
         """Like predict(), but only for a single record. The input data can be a Python list."""
         inp = np.array([inp], dtype=self.input_dtype)
         self.interpreter.set_tensor(self.input_index, inp)
         self.interpreter.invoke()
-        out = self.interpreter.get_tensor(self.output_index)
+        out = self.interpreter.get_tensor(self.policy_index)
+
+        return out[0]
+
+    def predict_single_value(self, inp):
+        """Like predict(), but only for a single record. The input data can be a Python list."""
+        inp = np.array([inp], dtype=self.input_dtype)
+        self.interpreter.set_tensor(self.input_index, inp)
+        self.interpreter.invoke()
+        out = self.interpreter.get_tensor(self.value_index)
+
         return out[0]

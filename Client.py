@@ -7,7 +7,7 @@ import numpy as np
 
 game = HexGame(7)
 
-actor = ANNActorPolicy(game, [1, 1], [1, 1], "relu", 100, 0.1)  # parameters are ignored
+actor = ANNActorPolicy(game, 1, [1, 1], "relu", 100, 0.1)  # parameters are ignored
 
 
 current_player = 1
@@ -95,7 +95,7 @@ if __name__ == "__main__":
     sim_world = game
 
     actor = ANNActorPolicy(
-        sim_world, [1, 1], [1, 1], "relu", 100, 0.1
+        sim_world, [1, 1], [1, 1], "relu", 100, 0.1, exploration=0.0
     )  # parameters are ignored
 
     file_name_split = model_file_name.split("/")

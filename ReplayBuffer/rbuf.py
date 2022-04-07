@@ -16,10 +16,10 @@ class ReplayBuffer:
     def __init__(self, max_size: int, minibatch_size: int) -> None:
         self.max_size = max_size
         self.minibatch_size = minibatch_size
-        self.cases: List[Tuple[State, np.ndarray]] = []
+        self.cases: List[Tuple[State, np.ndarray, float]] = []
         return
 
-    def save_case(self, training_case: Tuple[State, np.ndarray]):
+    def save_case(self, training_case: Tuple[State, np.ndarray, float]):
         """
         Saves given training_case to the replay buffer.
         removes the oldest element in the buffer if there is no more room in the buffer
@@ -47,7 +47,7 @@ class ReplayBuffer:
 
     def get_mini_batch(
         self, actor: ActorPolicy, batch_size=-1
-    ) -> Tuple[tf.Tensor, tf.Tensor]:
+    ) -> Tuple[tf.Tensor, tf.Tensor, tf.Tensor]:
         """
         get an input and target tensor / minibatch of given size from the replayBuffer
         """
@@ -59,9 +59,11 @@ class ReplayBuffer:
         inputs = tf.convert_to_tensor(
             np.array([actor.translate_state(case[0]) for case in cases])
         )
-        targets = tf.convert_to_tensor(np.array([case[1] for case in cases]))
+        policy_targets = tf.convert_to_tensor(np.array([case[1] for case in cases]))
 
-        return (inputs, targets)
+        value_targets = tf.convert_to_tensor(np.array([case[2] for case in cases]))
+
+        return (inputs, policy_targets, value_targets)
 
     def get_full_dataset(self, actor: ActorPolicy) -> Tuple[tf.Tensor, tf.Tensor]:
         inputs = tf.convert_to_tensor(

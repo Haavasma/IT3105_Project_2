@@ -12,10 +12,17 @@ class ActorPolicy:
 
         return
 
-    def get_action(self, state: State) -> int:
+    def get_action(self, state: State, exploit=False) -> int:
         actions = self.sim_world.get_legal_actions(state)
 
         return actions[random.Random().randint(0, len(actions) - 1)]
+
+    def get_action_probabilities(self, states: List[State]) -> np.ndarray:
+        return np.array([])
+
+    def get_value(self, state: State) -> int:
+
+        return 1
 
     def fit(self, inputs: tf.Tensor, targets: tf.Tensor):
         return
