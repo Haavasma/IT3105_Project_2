@@ -32,7 +32,7 @@ class ReplayBuffer:
 
     def save_buffer(self, training_id: str):
         """
-        saves the buffer of in a
+        Saves buffer for given training_id
         """
         with open(f"{REPLAY_DATA}/{training_id}.pickle", "wb") as f:
             pickle.dump(self.cases, f)
@@ -40,6 +40,9 @@ class ReplayBuffer:
         return
 
     def load_buffer(self, training_id: str):
+        """
+        loads the buffer saved for given training_id
+        """
         with open(f"{REPLAY_DATA}/{training_id}.pickle", "rb") as f:
             self.cases = pickle.load(f)
 
@@ -66,6 +69,9 @@ class ReplayBuffer:
         return (inputs, policy_targets, value_targets)
 
     def get_full_dataset(self, actor: ActorPolicy) -> Tuple[tf.Tensor, tf.Tensor]:
+        """
+        get the entire dataset of training cases currently in the buffer
+        """
         inputs = tf.convert_to_tensor(
             np.array([actor.translate_state(case[0]) for case in self.cases])
         )
