@@ -41,6 +41,7 @@ class ANNActorPolicy(ActorPolicy):
         kernel_size=2,
         filters=8,
         regularization_constant=0.0002,
+        verbose=True,
     ):
         self.sim_world = sim_world
         self.conv_layers = conv_layers
@@ -59,6 +60,7 @@ class ANNActorPolicy(ActorPolicy):
         self.filters = filters
         self.regularization_constant = regularization_constant
         self.iteration = 0
+        self.verbose = verbose
 
         self.setup_model()
 
@@ -136,7 +138,7 @@ class ANNActorPolicy(ActorPolicy):
             x=inputs,
             y=[policy_targets, value_targets],
             epochs=self.epochs,
-            verbose=True,
+            verbose=self.verbose,
         )
 
         # self.lite_model = lite_model.LiteModel.from_keras_model(self.model)

@@ -15,7 +15,10 @@ class TOPP:
         return
 
     def run_tournament_distinct_model(
-        self, distinct_model_path: str, games: int, sim_world: SimWorld
+        self,
+        distinct_model_path: str,
+        games: int,
+        sim_world: SimWorld,
     ):
         candidates = []
 

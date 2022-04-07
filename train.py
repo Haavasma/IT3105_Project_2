@@ -17,6 +17,7 @@ from tensorflow import keras
 def main():
     # sim_world = SimWorld()
     sim_world = SimWorlds.HexGame(5)
+    verbose = False
 
     """ TRAINING PARAMETERS"""
     # amount of iterations to play
@@ -27,7 +28,7 @@ def main():
     EXPLORATION = 0.2
 
     # amount of search games in mcts
-    search_games = 200
+    search_games = 100
 
     # amount of parallell self-play games to play in each iteration
     n_processes = 5
@@ -76,6 +77,7 @@ def main():
         optimizer=a_net_optimizer,
         kernel_size=kernel_size,
         filters=n_filters,
+        verbose=verbose,
     )
 
     # replay_buffer.load_buffer("1649288748__7")
@@ -89,7 +91,7 @@ def main():
         sim_world = SimWorlds.HexGame(board_size)
 
         actor = ANNActorPolicy(
-            sim_world, [], [1], "relu", EPOCHS, 0.0007, exploration=EXPLORATION
+            sim_world, 1, [1], "relu", EPOCHS, 0.0007, exploration=EXPLORATION
         )
 
         actor.load_best_model(training_id)
@@ -118,6 +120,7 @@ def main():
         training_iterations=training_iterations,
         skip_evaluation=skip_evaluation,
         eval_thinking_time=eval_thinking_time,
+        verbose=verbose,
     )
 
     return
@@ -137,6 +140,7 @@ def train(
     training_iterations=100,
     skip_evaluation=False,
     eval_thinking_time=0.1,
+    verbose=False,
 ):
     """
     The mcts self play RL loop. Runs
@@ -165,21 +169,18 @@ def train(
         kernel_size=actor.kernel_size,
     )
 
-    print("loaded best_actor!")
-
     for game in tqdm(range(iteration + 1, n_games + iteration + 1)):
         manager = Manager()
         executions: List[Process] = []
         cases: Dict[int, Tuple[State, np.ndarray, float]] = manager.dict()
 
-        # print("GAME")
         for i in range(n_processes):
             actor.reset_random(int(time.time()) + i)
             mcts.reset_random(int(time.time()) + i)
 
             mcts.actor_policy = actor
             executions.append(
-                Process(target=run_game, args=[mcts, sim_world, cases, i])
+                Process(target=run_game, args=[mcts, sim_world, cases, i, verbose])
             )
             executions[i].start()
 
@@ -187,9 +188,6 @@ def train(
             executions[i].join()
             for case in cases[i]:
                 replayBuffer.save_case(case)
-
-        print(f"replay_buffer size: {len(replayBuffer.cases)}")
-        print("\n")
 
         if skip_evaluation:
             for _ in range(training_iterations):
@@ -225,11 +223,11 @@ def train(
             actor.save_current_model(training_id, game)
             replayBuffer.save_buffer(training_id)
             print(f"SAVING BUFFER AND MODEL ON ID: {training_id}, ITERATION: {game}")
-            # plt.plot(losses)
-            # plt.show()
 
 
-def run_game(mcts: MCTS, sim_world: SimWorlds.HexGame, cases: Dict, index: int):
+def run_game(
+    mcts: MCTS, sim_world: SimWorlds.HexGame, cases: Dict, index: int, verbose=False
+):
     """
     run a game of mcts self play and store the resulting action probabilities
     and winner in assigned index
@@ -244,13 +242,13 @@ def run_game(mcts: MCTS, sim_world: SimWorlds.HexGame, cases: Dict, index: int):
     results = []
     reward = 0
     while True:
-        # mcts.reset_tree(actor_state)
         player = actor_state.player
         training_case = mcts.search()
 
-        print(f"player: {player}")
-        sim_world.visualize_state(actor_state)
-        print(training_case[1])
+        if verbose:
+            print(f"player: {player}")
+            sim_world.visualize_state(actor_state)
+            print(training_case[1])
 
         results.append(training_case)
 
@@ -261,11 +259,11 @@ def run_game(mcts: MCTS, sim_world: SimWorlds.HexGame, cases: Dict, index: int):
 
         # print(actor_state.player)
         if is_end_state:
-            print(f"-------THREAD: {index}--------")
-            sim_world.visualize_state(actor_state)
-            print(f"player {player} wins in thread {index}")
-            print("----------------------------")
-            # print("game finished! ")
+            if verbose:
+                print(f"-------THREAD: {index}--------")
+                sim_world.visualize_state(actor_state)
+                print(f"player {player} wins in thread {index}")
+                print("----------------------------")
             break
 
         mcts.perform_action(action)

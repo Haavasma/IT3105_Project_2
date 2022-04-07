@@ -30,31 +30,6 @@ class Statistics:
 
 
 class Client(ActorClient):
-    # def __init__(
-    #     self,
-    #     host=...,
-    #     port=...,
-    #     cert=...,
-    #     auth=...,
-    #     echo=...,
-    #     qualify=...,
-    #     api_port=...,
-    #     league_port=...,
-    #     log_fmt=None,
-    # ):
-    #     self.stats = Statistics()
-    #     super().__init__(
-    #         host=host,
-    #         port=port,
-    #         cert=cert,
-    #         auth=auth,
-    #         echo=echo,
-    #         qualify=qualify,
-    #         api_port=api_port,
-    #         league_port=league_port,
-    #         log_fmt=log_fmt,
-    #     )
-
     def handle_series_start(
         self, unique_id, series_id, player_map, num_games, game_params
     ):
@@ -95,13 +70,13 @@ if __name__ == "__main__":
     sim_world = game
 
     actor = ANNActorPolicy(
-        sim_world, [1, 1], [1, 1], "relu", 100, 0.1, exploration=0.0
+        sim_world, 1, [1, 1], "relu", 100, 0.1, exploration=0.0
     )  # parameters are ignored
 
     file_name_split = model_file_name.split("/")
 
     actor.load_model("/".join(file_name_split[:-1]), file_name_split[-1])
 
-    client = Client(auth="02779e3ccbaf4d39927ac8216ff4021e")
+    client = Client()
 
     client.run()
