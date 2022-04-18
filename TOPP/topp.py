@@ -45,7 +45,7 @@ class TOPP:
         for candidate in candidate_model_paths:
             actor = ANNActorPolicy(sim_world, 1, [3], "relu", 100, 0.01)
             cand_split = candidate.split("/")
-            actor.load_model("/".join(cand_split[:-1]), cand_split[-1])
+            actor.load_model(cand_split[-2], cand_split[-1])
             actors.append(actor)
 
         if random_actor:
@@ -124,7 +124,8 @@ class TOPP:
 
         # print out resulting amount of points
         for i in range(len(candidate_model_paths)):
-            print(f"model: {candidate_model_paths[i]}, points: {series_points[i]}")
+            print(
+                f"model: {candidate_model_paths[i]}, points: {series_points[i]}")
 
         return
 

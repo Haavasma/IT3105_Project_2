@@ -16,55 +16,57 @@ from tensorflow import keras
 
 def main():
     # sim_world = SimWorld()
-    sim_world = SimWorlds.HexGame(5)
-    verbose = False
+    sim_world = SimWorlds.HexGame(7)
+    verbose = True
 
     """ TRAINING PARAMETERS"""
     # amount of iterations to play
-    n_games = 6
+    n_games = 500
 
     # The probability of actor taking a random action instead of the
     # provided from neural net during MCTS
-    EXPLORATION = 0.2
+    EXPLORATION = 0.0
 
     # amount of search games in mcts
-    search_games = 100
+    search_games = 500
 
     # amount of parallell self-play games to play in each iteration
-    n_processes = 5
+    n_processes = 10
 
     # When to save the ANET to file, i.e 5-> save model every 5 iteration
-    save_interval = 2
+    save_interval = 10
 
     # How many times to train on sampled minibatch each iteration
-    training_iterations = 5
+    training_iterations = 100
 
     # skips evaluating the NN
-    skip_evaluation = True
+    skip_evaluation = False
     # When to evaluate the NN, i.e 10 -> evaluate every 10 iterations
-    evaluate_interval = 10
-
-    # in seconds how long the mcts has to think for each move during evaluation
-    eval_thinking_time = 0.1
+    evaluate_interval = 5
 
     """ NEURAL NET PARAMETERS"""
     # probability of choosing random move instead of from NN during rollout    EXPLORATION = 0.2
-    EPOCHS = 10  # Epochs to train during fitting of model
-    rollout_probability = 0.8  # The probability of rolling out instead of getting evaluation from critic head
+    EPOCHS = 2  # Epochs to train during fitting of model
+    # The probability of rolling out instead of getting evaluation from critic head
+    rollout_probability = 0.5
     rollout_probability_decay = 1.0  # how fast the rollout probability decays
     a_net_optimizer = keras.optimizers.Adam  # Chosen optimizers for model training
     learning_rate = 0.001
 
-    residual_blocks = 3  # amount of residual blocks
+    residual_blocks = 10  # amount of residual blocks
     kernel_size = 3  # kernel size for conv layers in the NN
-    n_filters = 16  # amount of filter in each conv layer in the model
+    n_filters = 32  # amount of filter in each conv layer in the model
 
     # The dense layers and amount of neurons in each layer in the policy head
-    dense_layers = [100]
+    dense_layers = []
     activation_function = "relu"  # activation function in policy dense layers
 
     # configure replay buffer
-    replay_buffer = ReplayBuffer(500000, 1024)
+    replay_buffer = ReplayBuffer(50000, 2048)
+    replay_buffer.load_buffer("1649873487__7")
+
+    # print all cases in replay buffer
+    print(f"amount of replay cases: {len(replay_buffer.cases)}")
 
     actor = ANNActorPolicy(
         sim_world,
@@ -80,9 +82,10 @@ def main():
         verbose=verbose,
     )
 
-    # replay_buffer.load_buffer("1649288748__7")
+    actor.load_model("1649873487__7", "best")
 
-    training_id = ""
+    actor.iteration = 200
+    training_id = "1649873487__7"
 
     # if specified, used latest model and replaybuffer from a previous training session
     if len(sys.argv) > 2:
@@ -91,11 +94,16 @@ def main():
         sim_world = SimWorlds.HexGame(board_size)
 
         actor = ANNActorPolicy(
-            sim_world, 1, [1], "relu", EPOCHS, 0.0007, exploration=EXPLORATION
+            sim_world,
+            actor.conv_layers,
+            actor.dense_layers,
+            actor.activation_function,
+            EPOCHS,
+            learning_rate,
+            exploration=EXPLORATION
         )
-
         actor.load_best_model(training_id)
-        replay_buffer.load_buffer(training_id)
+        # replay_buffer.load_buffer(training_id)
 
     mcts = MCTS(
         actor,
@@ -117,9 +125,9 @@ def main():
         replay_buffer,
         actor,
         training_id=training_id,
+        iteration=actor.iteration,
         training_iterations=training_iterations,
         skip_evaluation=skip_evaluation,
-        eval_thinking_time=eval_thinking_time,
         verbose=verbose,
     )
 
@@ -139,7 +147,6 @@ def train(
     iteration=0,
     training_iterations=100,
     skip_evaluation=False,
-    eval_thinking_time=0.1,
     verbose=False,
 ):
     """
@@ -151,8 +158,6 @@ def train(
     against current best network). If it wins >55% of games,
     the new network will replace the current best network
     """
-    if not skip_evaluation:
-        actor.save_best_model(training_id)
     if training_id == "":
         training_id = f"{int(time.time())}__{sim_world.board_size}"
 
@@ -174,13 +179,17 @@ def train(
         executions: List[Process] = []
         cases: Dict[int, Tuple[State, np.ndarray, float]] = manager.dict()
 
+        print(f"REPLAY BUFFER SIZE: {len(replayBuffer.cases)}")
+
+        best_actor.load_best_model(training_id)
+
         for i in range(n_processes):
             actor.reset_random(int(time.time()) + i)
             mcts.reset_random(int(time.time()) + i)
-
-            mcts.actor_policy = actor
+            mcts.actor_policy = actor if skip_evaluation else best_actor
             executions.append(
-                Process(target=run_game, args=[mcts, sim_world, cases, i, verbose])
+                Process(target=run_game, args=[
+                        mcts, sim_world, cases, i, verbose])
             )
             executions[i].start()
 
@@ -205,24 +214,20 @@ def train(
                 )
                 actor.fit(inputs, policy_targets, value_targets)
 
-                if i % (training_iterations // 3) == 0:
+                if i % (training_iterations // 5) == 0:
                     actor.update_lite()
+                    best_actor.load_best_model(training_id)
                     if is_latest_better(
-                        best_actor, actor, eval_thinking_time=eval_thinking_time
+                        best_actor, actor
                     ):
                         # best_actor.model = copy.deepcopy(actor.model)
-                        mcts.decay_rollout_prob()
                         actor.save_best_model(training_id)
-                        time.sleep(0.5)
-                        best_actor.load_best_model(training_id)
-
-            actor.load_best_model(training_id)
 
         if game % save_interval == 0:
-            mcts.reset_rollout_prob()
             actor.save_current_model(training_id, game)
             replayBuffer.save_buffer(training_id)
-            print(f"SAVING BUFFER AND MODEL ON ID: {training_id}, ITERATION: {game}")
+            print(
+                f"SAVING BUFFER AND MODEL ON ID: {training_id}, ITERATION: {game}")
 
 
 def run_game(
@@ -239,23 +244,30 @@ def run_game(
 
     is_end_state = False
 
+    print("PLAYING GAME: ", index)
+
     results = []
     reward = 0
     while True:
         player = actor_state.player
         training_case = mcts.search()
 
+        max_action_prob = mcts.get_max_result_from_probability_distribution(
+            training_case[1]
+        )
+
+        action = mcts.pick_action(training_case[1])
+        (actor_state, is_end_state, reward) = sim_world.get_new_state(
+            (actor_state, action)
+        )
+
         if verbose:
             print(f"player: {player}")
             sim_world.visualize_state(actor_state)
             print(training_case[1])
+            print(max_action_prob)
 
-        results.append(training_case)
-
-        action = int(training_case[1].argmax())
-        (actor_state, is_end_state, reward) = sim_world.get_new_state(
-            (actor_state, action)
-        )
+        results.append((training_case[0], max_action_prob))
 
         # print(actor_state.player)
         if is_end_state:
@@ -280,8 +292,7 @@ def run_game(
 def is_latest_better(
     current_best: ANNActorPolicy,
     latest: ANNActorPolicy,
-    games=20,
-    eval_thinking_time=0.1,
+    games=100,
 ) -> bool:
     """
     run a given amount of games between the current best actor (moves chosen with mcts)
@@ -303,10 +314,9 @@ def is_latest_better(
                 latest if side == 0 else current_best,
                 current_best.sim_world,
                 exploit=True,
-                verbose=False,
-                use_mcts=True,
+                verbose=True,
+                use_mcts=False,
                 random_first_choice=True,
-                move_time_limit=eval_thinking_time,
             )
             != side + 1
         ):

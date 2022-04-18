@@ -3,6 +3,7 @@ from typing import List, Tuple
 from .state import State
 from .sim_world import SimWorld
 import numpy as np
+import random
 
 
 class HexGame(SimWorld):
@@ -11,7 +12,7 @@ class HexGame(SimWorld):
         return
 
     def get_initial_state(self) -> State:
-        return State(np.zeros((self.board_size**2)), 1)
+        return State(np.zeros((self.board_size**2)), 1 if random.random() > 0.5 else 2)
 
     def get_legal_actions(self, state: State) -> List[int]:
         return list(np.where(state.state == 0)[0])
@@ -38,7 +39,8 @@ class HexGame(SimWorld):
         action = SAP[1]
 
         if state.state[action] != 0:
-            raise Exception("Cannot put piece where there is already one placed!")
+            raise Exception(
+                "Cannot put piece where there is already one placed!")
 
         is_winning_move = self.is_winning_move(SAP)
         reward = 0
@@ -83,7 +85,8 @@ class HexGame(SimWorld):
                 for j in range(self.board_size):
                     if i + j == counter:
                         lst.append(
-                            int(state.state[self.from_row_col_to_action((j, i))])
+                            int(state.state[self.from_row_col_to_action(
+                                (j, i))])
                         )
 
             for i in lst:
@@ -146,14 +149,16 @@ class HexGame(SimWorld):
         if row + 1 < self.board_size:
             neighbors.append(self.from_row_col_to_action((row + 1, col)))
             if col - 1 >= 0:
-                neighbors.append(self.from_row_col_to_action((row + 1, col - 1)))
+                neighbors.append(
+                    self.from_row_col_to_action((row + 1, col - 1)))
         if col + 1 < self.board_size:
             neighbors.append(self.from_row_col_to_action((row, col + 1)))
 
         if row - 1 >= 0:
             neighbors.append(self.from_row_col_to_action((row - 1, col)))
             if col + 1 < self.board_size:
-                neighbors.append(self.from_row_col_to_action((row - 1, col + 1)))
+                neighbors.append(
+                    self.from_row_col_to_action((row - 1, col + 1)))
         if col - 1 >= 0:
             neighbors.append(self.from_row_col_to_action((row, col - 1)))
 

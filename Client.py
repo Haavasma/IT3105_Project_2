@@ -1,13 +1,16 @@
+from MCTS.search import MCTS
 import sys
 from Actor import ANNActorPolicy
 from SimWorlds import SimWorld, HexGame, State
 from ActorClient import ActorClient
 import numpy as np
+import MCTS
 
 
 game = HexGame(7)
 
-actor = ANNActorPolicy(game, 1, [1, 1], "relu", 100, 0.1)  # parameters are ignored
+# parameters are ignored
+actor = ANNActorPolicy(game, 1, [1, 1], "relu", 100, 0.1)
 
 
 current_player = 1
@@ -42,6 +45,7 @@ class Client(ActorClient):
     def handle_get_action(self, state):
         structured_state = State(np.array(state[1:]), state[0])
         # game.visualize_state(structured_state)
+
         return game.from_action_to_row_col(
             actor.get_action(structured_state, exploit=True)
         )

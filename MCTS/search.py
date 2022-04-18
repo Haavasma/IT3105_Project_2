@@ -114,7 +114,6 @@ class MCTS:
         # Perform given amount of searches through the tree
         for _ in range(self.n_searches):
             self.state = self.root_node.state
-
             (path, node, is_winning_state, result) = self.select_leaf_node()
             if not is_winning_state:
                 self.expand_node(node)
@@ -138,13 +137,38 @@ class MCTS:
         # normalize distribution to sum to 1
         dist_normalized = distribution / distribution.sum()
 
-        result = np.zeros(dist_normalized.shape)
+        print(
+            f"NN evaluation: {self.actor_policy.get_value(self.root_node.state)}")
 
-        # keep only the "correct" move as training data
-        move = np.argmax(dist_normalized)
+        return (self.root_node.state, dist_normalized)
+
+    def get_max_result_from_probability_distribution(
+        self,
+        action_probability_distribution: np.ndarray
+    ) -> np.ndarray:
+        """
+        returns the argmax result of the given probability distribution
+        """
+        prob_distribution = action_probability_distribution
+        result = np.zeros(action_probability_distribution.shape)
+
+        move = np.argmax(prob_distribution)
         result[move] = 1
 
-        return (self.root_node.state, result)
+        return result
+
+    def pick_action(
+            self,
+            action_distribution: np.ndarray,
+            exploration=0.1) -> int:
+        """
+        pick action based on action probability distribution
+        """
+
+        if self.random.random() > exploration:
+            return int(np.argmax(action_distribution))
+
+        return np.random.choice(np.arange(len(action_distribution)), p=action_distribution)
 
     def backpropagate(self, path: list[int], result: float):
         current_node = self.root_node
@@ -161,8 +185,10 @@ class MCTS:
         is_end_state = False
         reward = 0
         self.state = node.state
+
         while not is_end_state:
-            action = self.actor_policy.get_action(self.state, exploit=self.exploit)
+            action = self.actor_policy.get_action(
+                self.state, exploit=self.exploit)
             (self.state, is_end_state, reward) = self.sim_world.get_new_state(
                 (self.state, action)
             )
@@ -224,7 +250,8 @@ class MCTS:
             best_action = 0
             best_value = -sys.float_info.max
             for action in self.sim_world.get_legal_actions(node.state):
-                value = node.q[action] + self.calculate_exploration_bonus(node, action)
+                value = node.q[action] + \
+                    self.calculate_exploration_bonus(node, action)
                 if value > best_value:
                     best_value = value
                     best_action = action
@@ -235,7 +262,8 @@ class MCTS:
             best_action = 0
             best_value = sys.float_info.max
             for action in self.sim_world.get_legal_actions(node.state):
-                value = node.q[action] - self.calculate_exploration_bonus(node, action)
+                value = node.q[action] - \
+                    self.calculate_exploration_bonus(node, action)
 
                 if value < best_value:
                     best_value = value
@@ -260,7 +288,8 @@ def select_action(state: State, time_limit: float, actor: ActorPolicy, exploit=F
     no state, select an action using the given ANET policy
     and time limit
     """
-    mcts = MCTS(actor, actor.sim_world, state, 1000, exploit=exploit)
+    mcts = MCTS(actor, actor.sim_world, state, 1000,
+                exploit=exploit, rollout_probability=1.0)
     start_time = time.time()
 
     while True:
@@ -283,6 +312,4 @@ def select_action(state: State, time_limit: float, actor: ActorPolicy, exploit=F
     for action in mcts.root_node.edges:
         distribution[action] = mcts.root_node.edge_visits[action]
 
-    dist_normalized = distribution / distribution.sum()
-
-    return int(np.argmax(dist_normalized))
+    return int(np.argmax(distribution))

@@ -85,7 +85,8 @@ class ANNActorPolicy(ActorPolicy):
         """
         get the action probabilities for a list of states
         """
-        translated_states = np.array([self.translate_state(state) for state in states])
+        translated_states = np.array(
+            [self.translate_state(state) for state in states])
         result = self.lite_model.predict_policy(translated_states)
 
         action_probs = np.zeros(result.shape)
@@ -114,18 +115,16 @@ class ANNActorPolicy(ActorPolicy):
             self.translate_state(state)
         ).flatten()
 
-        # filter illegal moves
+        # return probabalistic result
+        # if prob_result:
+        #     return np.random.choice(normalized.shape[0], p=normalized)
+
         mask = np.ones(result.shape, dtype=bool)
         mask[legal_actions] = False
         result[mask] = 0
 
         normalized = result / result.sum()
 
-        # return probabalistic result
-        if prob_result:
-            return np.random.choice(normalized.shape[0], p=normalized)
-
-        # return greedy choice
         return int(np.argmax(normalized))
 
     def fit(
@@ -149,7 +148,8 @@ class ANNActorPolicy(ActorPolicy):
 
     def setup_model(self):
         # create input layer with nodes equal to the amount of observations
-        translated_state = self.translate_state(self.sim_world.get_initial_state())
+        translated_state = self.translate_state(
+            self.sim_world.get_initial_state())
 
         input_layer = layers.Input(shape=translated_state.shape, name="input")
 
@@ -158,7 +158,7 @@ class ANNActorPolicy(ActorPolicy):
         # initial reshape and convolutional layer
         square_root = int(np.sqrt(translated_state.shape[0]))
 
-        # reshape the input to (k, k, features)
+        # reshape the input to(k, k, features)
         model = layers.Reshape(
             (square_root, square_root, translated_state.shape[1]),
             input_shape=translated_state.shape,
@@ -192,7 +192,8 @@ class ANNActorPolicy(ActorPolicy):
         self.model = keras_Model(input_layer, [policy_head, value_head])
 
         self.model.compile(
-            loss={"value_head": self.critic_loss, "policy_head": self.policy_loss},
+            loss={"value_head": self.critic_loss,
+                  "policy_head": self.policy_loss},
             optimizer=self.optimizer(learning_rate=self.learning_rate),
             metrics=["categorical_crossentropy", "mae"],
             loss_weights={"value_head": 0.5, "policy_head": 0.5},
@@ -205,13 +206,17 @@ class ANNActorPolicy(ActorPolicy):
         Translate the 1d state and player to a 2 board with several layers of information,
         inspired by alpha zero implementation
         """
+
+        # print("PLAYER: ", state.player)
+        # print("BEFORE FLIP: ")
+        # self.sim_world.visualize_state(state)
         actual_state = copy.deepcopy(state.state)
 
-        matrix = np.zeros((len(actual_state), 4))
+        matrix = np.zeros((actual_state.shape[0], 4))
 
-        matrix[:, 0] = actual_state == state.player
+        matrix[:, 0] = actual_state == 1
 
-        matrix[:, 1] = actual_state == ((state.player) % 2) + 1
+        matrix[:, 1] = actual_state == 2
 
         matrix[:, 2] = actual_state == 0
 
@@ -241,20 +246,26 @@ class ANNActorPolicy(ActorPolicy):
         return self.save_current_model(training_id, "best")
 
     def load_model(self, directory: str, version: str):
-        self.model = keras.models.load_model(f"{directory}/{version}")
+        self.model = keras.models.load_model(
+            f"{MODEL_FOLDER}/{directory}/{version}")
         self.lite_model = lite_model.LiteModel.from_keras_model(self.model)
 
     def load_best_model(self, training_id: str):
         """
         load the current best model for the training id (if it exists)
         """
-        for directory in os.listdir(f"{MODEL_FOLDER}/{training_id}"):
-            if directory == "best":
-                self.model = keras.models.load_model(
-                    f"{MODEL_FOLDER}/{training_id}/best"
-                )
-                self.lite_model = lite_model.LiteModel.from_keras_model(self.model)
-                break
+
+        model_directory = f"{MODEL_FOLDER}/{training_id}"
+
+        if os.path.exists(model_directory):
+            for directory in os.listdir(f"{MODEL_FOLDER}/{training_id}"):
+                if directory == "best":
+                    self.model = keras.models.load_model(
+                        f"{MODEL_FOLDER}/{training_id}/best"
+                    )
+                    self.lite_model = lite_model.LiteModel.from_keras_model(
+                        self.model)
+                    break
 
 
 def convolutional_layer(
